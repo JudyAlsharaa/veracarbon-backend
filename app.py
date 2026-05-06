@@ -1,3 +1,7 @@
+import base64
+import json
+
+import anthropic
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -64,6 +68,139 @@ def verify():
             **result,
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/analyze-document
+# ---------------------------------------------------------------------------
+
+_CLAUDE_MODEL = "claude-sonnet-4-20250514"
+
+
+@app.route("/api/analyze-document", methods=["POST"])
+def analyze_document():
+    if "file" not in request.files:
+        return _error("No file provided — include a PDF as 'file' in the form data", 400)
+
+    f = request.files["file"]
+    if not f.filename or not f.filename.lower().endswith(".pdf"):
+        return _error("Only PDF files are supported", 400)
+
+    pdf_bytes = f.read()
+    if not pdf_bytes:
+        return _error("Uploaded file is empty", 400)
+
+    pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
+    claude = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+
+    try:
+        response = claude.messages.create(
+            model=_CLAUDE_MODEL,
+            max_tokens=1024,
+            system=(
+                "You are a carbon credit document analyst. Extract structured data from the provided "
+                "document. Respond with valid JSON only — no prose, no markdown fences. "
+                "Use null for any field you cannot find."
+            ),
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "document",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "application/pdf",
+                                "data": pdf_b64,
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": (
+                                "Extract the following fields from this carbon credit project document "
+                                "and return them as a JSON object:\n"
+                                "- project_name (string)\n"
+                                "- coordinates: {lat: number, lng: number} — use the project centroid\n"
+                                "- claimed_hectares (number)\n"
+                                "- claimed_co2_tonnes (number)\n"
+                                "- tree_count_claims (number)\n"
+                                "- project_timeline: {start_year: number, end_year: number}\n"
+                                "- registry (string, e.g. Verra, Gold Standard)\n"
+                                "- ecosystem_type (string, e.g. tropical forest, mangrove, grassland)\n\n"
+                                "Return ONLY the JSON object, nothing else."
+                            ),
+                        },
+                    ],
+                }
+            ],
+        )
+    except anthropic.APIError as exc:
+        app.logger.exception("Anthropic API error during document analysis")
+        return _error(f"AI analysis failed: {exc}", 502)
+
+    raw = response.content[0].text.strip()
+    try:
+        extracted = json.loads(raw)
+    except json.JSONDecodeError:
+        app.logger.error("Non-JSON response from Claude: %s", raw[:200])
+        return _error("AI returned non-JSON response", 502)
+
+    return jsonify(extracted)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/fraud-audit
+# ---------------------------------------------------------------------------
+
+
+@app.route("/api/fraud-audit", methods=["POST"])
+def fraud_audit():
+    body = request.get_json(silent=True)
+    if not body:
+        return _error("Request body must be JSON", 400)
+
+    document_claims = body.get("document_claims")
+    satellite_results = body.get("satellite_results")
+
+    if not document_claims or not satellite_results:
+        return _error("Both 'document_claims' and 'satellite_results' are required", 400)
+
+    claude = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+
+    prompt = (
+        f"DEVELOPER'S CLAIMED PROJECT DATA:\n{json.dumps(document_claims, indent=2)}\n\n"
+        f"SATELLITE CCIS EVIDENCE:\n{json.dumps(satellite_results, indent=2)}\n\n"
+        "Respond with a JSON object containing exactly these fields:\n"
+        '- fraud_risk: one of "Low", "Medium", "High", or "Critical"\n'
+        "- fraud_probability: integer 0-100\n"
+        "- discrepancies: array of strings, each describing one specific discrepancy\n"
+        "- audit_summary: 2-3 sentence natural-language verdict\n\n"
+        "Return ONLY the JSON object, nothing else."
+    )
+
+    try:
+        response = claude.messages.create(
+            model=_CLAUDE_MODEL,
+            max_tokens=1024,
+            system=(
+                "You are a carbon credit fraud auditor. Compare the developer's claimed project data "
+                "against satellite evidence. Identify discrepancies, flag overclaiming, assess fraud risk. "
+                "Be specific and cite numbers."
+            ),
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except anthropic.APIError as exc:
+        app.logger.exception("Anthropic API error during fraud audit")
+        return _error(f"AI audit failed: {exc}", 502)
+
+    raw = response.content[0].text.strip()
+    try:
+        audit = json.loads(raw)
+    except json.JSONDecodeError:
+        app.logger.error("Non-JSON response from Claude: %s", raw[:200])
+        return _error("AI returned non-JSON response", 502)
+
+    return jsonify(audit)
 
 
 # ---------------------------------------------------------------------------
