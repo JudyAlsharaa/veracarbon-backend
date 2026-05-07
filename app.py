@@ -200,6 +200,11 @@ def fraud_audit():
         return _error(f"AI audit failed: {exc}", 502)
 
     raw = response.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw[raw.index("\n") + 1:] if "\n" in raw else ""
+    if raw.endswith("```"):
+        raw = raw[:raw.rindex("```")].strip()
+
     try:
         audit = json.loads(raw)
     except json.JSONDecodeError:
