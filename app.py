@@ -74,7 +74,14 @@ def verify():
 # POST /api/analyze-document
 # ---------------------------------------------------------------------------
 
-_CLAUDE_MODEL = "claude-sonnet-4-20250514"
+_CLAUDE_MODEL = "claude-sonnet-4-5"
+
+_EXTRACT_PROMPT = (
+    "Extract the following fields from this carbon project document. "
+    "If a field is not mentioned, use null. "
+    "Return ONLY valid JSON, no other text: "
+    "{project_name, lat, lng, hectares, co2_tonnes, trees, start_year, end_year, registry, ecosystem}"
+)
 
 
 @app.route("/api/analyze-document", methods=["POST"])
@@ -90,18 +97,13 @@ def analyze_document():
     if not pdf_bytes:
         return _error("Uploaded file is empty", 400)
 
-    pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
     claude = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
     try:
+        pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
         response = claude.messages.create(
             model=_CLAUDE_MODEL,
             max_tokens=1024,
-            system=(
-                "You are a carbon credit document analyst. Extract structured data from the provided "
-                "document. Respond with valid JSON only — no prose, no markdown fences. "
-                "Use null for any field you cannot find."
-            ),
             messages=[
                 {
                     "role": "user",
@@ -114,31 +116,35 @@ def analyze_document():
                                 "data": pdf_b64,
                             },
                         },
-                        {
-                            "type": "text",
-                            "text": (
-                                "Extract the following fields from this carbon credit project document "
-                                "and return them as a JSON object:\n"
-                                "- project_name (string)\n"
-                                "- coordinates: {lat: number, lng: number} — use the project centroid\n"
-                                "- claimed_hectares (number)\n"
-                                "- claimed_co2_tonnes (number)\n"
-                                "- tree_count_claims (number)\n"
-                                "- project_timeline: {start_year: number, end_year: number}\n"
-                                "- registry (string, e.g. Verra, Gold Standard)\n"
-                                "- ecosystem_type (string, e.g. tropical forest, mangrove, grassland)\n\n"
-                                "Return ONLY the JSON object, nothing else."
-                            ),
-                        },
+                        {"type": "text", "text": _EXTRACT_PROMPT},
                     ],
                 }
             ],
         )
+    except anthropic.BadRequestError:
+        # PDF could not be parsed — fall back to reading as plain text
+        text_content = pdf_bytes.decode("utf-8", errors="replace")
+        try:
+            response = claude.messages.create(
+                model=_CLAUDE_MODEL,
+                max_tokens=1024,
+                messages=[
+                    {"role": "user", "content": f"{text_content}\n\n{_EXTRACT_PROMPT}"},
+                ],
+            )
+        except anthropic.APIError as exc:
+            app.logger.exception("Anthropic API error during document analysis (text fallback)")
+            return _error(f"AI analysis failed: {exc}", 502)
     except anthropic.APIError as exc:
         app.logger.exception("Anthropic API error during document analysis")
         return _error(f"AI analysis failed: {exc}", 502)
 
     raw = response.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw[raw.index("\n") + 1:] if "\n" in raw else ""
+    if raw.endswith("```"):
+        raw = raw[:raw.rindex("```")].strip()
+
     try:
         extracted = json.loads(raw)
     except json.JSONDecodeError:
