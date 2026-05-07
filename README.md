@@ -168,4 +168,4 @@ Deployed on Render with auto-deploy from this GitHub repo. Environment variables
 
 VeraCarbon was built to address a real problem: carbon credits are largely unverified, and the market is rife with greenwashing. Independent satellite verification has been technically possible for years but has never been packaged into an accessible, automated tool. This backend is the engine that makes that possible.
 
-Built by Judy Alsharaaju — Abu Dhabi, UAE.
+Built by Judy Alsharaa — Abu Dhabi, UAE.
