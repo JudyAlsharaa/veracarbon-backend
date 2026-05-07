@@ -27,6 +27,9 @@ def verify():
     if not body:
         return _error("Request body must be JSON", 400)
 
+    if body.get("ping"):
+        return jsonify({"status": "awake"})
+
     missing = [f for f in REQUIRED_FIELDS if f not in body]
     if missing:
         return _error(f"Missing required fields: {', '.join(missing)}", 400)
