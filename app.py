@@ -170,9 +170,20 @@ def fraud_audit():
 
     document_claims = body.get("document_claims")
     satellite_results = body.get("satellite_results")
+    coordinates = body.get("coordinates")
+    start_date = body.get("start_date")
+    end_date = body.get("end_date")
 
     if not document_claims or not satellite_results:
         return _error("Both 'document_claims' and 'satellite_results' are required", 400)
+
+    # Try to get satellite thumbnail for visual AI analysis
+    satellite_image_b64 = None
+    if coordinates and start_date and end_date:
+        try:
+            satellite_image_b64 = gee_engine.get_satellite_thumbnail(coordinates, start_date, end_date)
+        except Exception as e:
+            app.logger.warning("Could not fetch satellite thumbnail: %s", e)
 
     claude = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
@@ -187,16 +198,30 @@ def fraud_audit():
         "Return ONLY the JSON object, nothing else."
     )
 
+    # Build message content — include satellite image if available
+    user_content = [{"type": "text", "text": prompt}]
+    if satellite_image_b64:
+        user_content.insert(0, {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": satellite_image_b64,
+            }
+        })
+
     try:
         response = claude.messages.create(
             model=_CLAUDE_MODEL,
             max_tokens=1024,
             system=(
-                "You are a carbon credit fraud auditor. Compare the developer's claimed project data "
-                "against satellite evidence. Identify discrepancies, flag overclaiming, assess fraud risk. "
-                "Be specific and cite numbers."
+                "You are a carbon credit fraud auditor with access to satellite imagery. "
+                "If an image is provided, analyze it visually — describe what you see: vegetation density, "
+                "land cover, any signs of deforestation or degradation. Then compare the developer's claimed "
+                "project data against both the satellite image and the numerical evidence. "
+                "Identify discrepancies, flag overclaiming, assess fraud risk. Be specific and cite numbers."
             ),
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": user_content}],
         )
     except anthropic.APIError as exc:
         app.logger.exception("Anthropic API error during fraud audit")

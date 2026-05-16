@@ -468,3 +468,24 @@ def _run_with_timeout(fn, args=(), timeout=120):
     if "error" in exc_box:
         raise exc_box["error"]
     return result["value"]
+
+
+def get_satellite_thumbnail(geojson_polygon, start_date, end_date):
+    """Returns a base64-encoded RGB satellite image of the AOI."""
+    _init_gee()
+    aoi = _geojson_to_ee_geometry(geojson_polygon)
+    start = ee.Date(start_date)
+    end = ee.Date(end_date)
+    composite = _s2_composite(aoi, start, end)
+    url = composite.select(["B4", "B3", "B2"]).getThumbURL({
+        "region": aoi,
+        "dimensions": 512,
+        "format": "png",
+        "min": 0,
+        "max": 0.3,
+        "gamma": 1.4,
+    })
+    import urllib.request, base64
+    with urllib.request.urlopen(url) as r:
+        img_bytes = r.read()
+    return base64.standard_b64encode(img_bytes).decode("utf-8")
