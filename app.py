@@ -239,6 +239,7 @@ def fraud_audit():
         app.logger.error("Non-JSON response from Claude: %s", raw[:200])
         return _error("AI returned non-JSON response", 502)
 
+    audit['satellite_image'] = satellite_image_b64 if satellite_image_b64 else None
     return jsonify(audit)
 
 
