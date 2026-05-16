@@ -135,7 +135,21 @@ The Carbon Credit Integrity Score (CCIS) is computed from seven satellite-derive
 Scores below 50 trigger a **Reject** recommendation. Scores 50–75 are **Review**. Above 75 is **Approve**.
 
 ---
-
+1. Vegetation Change (NDVI Delta) — 25%
+NDVI measures how green and dense the vegetation is. We compare it at the start vs end of the project period. If a project claims to be protecting or growing a forest, NDVI should stay stable or increase. If it's dropping, the forest is degrading — which directly contradicts the carbon sequestration claim. Highest weight because it's the most direct measure of whether carbon is actually being stored.
+2. Permanence Risk — 20%
+Uses Hansen Global Forest Loss data to check if trees have actually been cut down during the project period. A carbon credit only works if the carbon stays locked in the trees permanently. If there's deforestation happening inside the project boundary, the credit is worthless.
+3. Additionality Baseline — 15%
+This asks: would the forest have been fine anyway without this project? We compare the project area's vegetation to the surrounding regional average. If the area was never really at risk, the project isn't "additional" — meaning it's not actually preventing any new emissions. This is one of the most common forms of fraud in the carbon market.
+4. Leakage Buffer — 15%
+If a project protects one forest but deforestation just moves to the area next door, no net carbon is saved. We check the vegetation in the surrounding buffer zone to see if deforestation is just shifting location rather than being prevented.
+5. Temporal Consistency — 10%
+Looks at vegetation stability across multiple years, not just start and end. A legitimate project should show consistent protection over time. If there are sudden drops mid-project it suggests disturbance, fire, or logging that the developer isn't disclosing.
+6. Data Confidence — 10%
+How many clean satellite scenes were available? If there's heavy cloud cover or few usable images, the score is based on limited data and should be trusted less. This pillar penalizes low data availability so the system doesn't give false confidence on poorly-covered locations.
+7. Biomass Proxy (SAR) — 5%
+Uses Sentinel-1 radar instead of optical imagery. Radar penetrates clouds and measures the physical structure of vegetation — trunk density, canopy height. A forest with high biomass has more carbon stored. Lowest weight because SAR is harder to interpret and serves as a structural cross-check rather than a 
+primary signal.
 ## Local Setup
 
 ```bash
